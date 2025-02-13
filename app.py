@@ -24,7 +24,7 @@ AudioSegment.ffprobe = "ffprobe"
 
 # 🔄 Fungsi untuk membagi file audio > 25MB menjadi potongan kecil
 def split_audio(file_path, max_size=25 * 1024 * 1024):
-    audio = AudioSegment.from_file(file_path)
+    audio = AudioSegment.from_file(file_path)  # Memproses file dengan pydub
     chunk_length_ms = len(audio) * (max_size / os.path.getsize(file_path))
     chunks = [audio[i:i + int(chunk_length_ms)] for i in range(0, len(audio), int(chunk_length_ms))]
 
