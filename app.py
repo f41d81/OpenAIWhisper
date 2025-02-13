@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 import os
 from dotenv import load_dotenv
 
@@ -15,16 +15,17 @@ if not api_key:
     st.error("⚠️ API Key tidak ditemukan! Tambahkan di Streamlit Secrets atau file .env")
     st.stop()
 
-openai.api_key = api_key  # Set API key untuk OpenAI
+# Inisialisasi OpenAI client
+client = OpenAI(api_key=api_key)
 
 # 🎙️ Fungsi untuk mentranskripsi audio menggunakan OpenAI Whisper API
 def transcribe_audio(audio_file):
     try:
-        response = openai.Audio.transcribe(
+        response = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file
         )
-        return response["text"]
+        return response.text
     except Exception as e:
         return str(e)
 
@@ -37,12 +38,12 @@ audio_file = st.file_uploader("Pilih file audio", type=["mp3", "wav", "flac", "m
 
 if audio_file is not None:
     st.audio(audio_file, format="audio/mp3")
-    
+
     # 🔘 Tombol untuk mulai transkripsi
     if st.button("Transkrip Audio"):
         with st.spinner("Sedang mentranskripsi..."):
             transcription = transcribe_audio(audio_file)
-        
+
         # ✍️ Tampilkan hasil transkripsi
         st.subheader("📝 Hasil Transkripsi:")
         st.write(transcription)
