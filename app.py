@@ -16,8 +16,11 @@ if not api_key:
     st.error("⚠️ API Key tidak ditemukan! Tambahkan di Streamlit Secrets atau file .env")
     st.stop()
 
-# Inisialisasi OpenAI client
-client = OpenAI(api_key=api_key)
+# 🛠️ Paksa pydub menggunakan ffmpeg-python agar bisa jalan di Streamlit Cloud
+from pydub.utils import which
+AudioSegment.converter = which("ffmpeg")
+AudioSegment.ffmpeg = which("ffmpeg")
+AudioSegment.ffprobe = which("ffprobe")
 
 # 🔄 Fungsi untuk membagi file audio > 25MB menjadi potongan kecil
 def split_audio(file_path, max_size=25 * 1024 * 1024):
@@ -34,22 +37,14 @@ def split_audio(file_path, max_size=25 * 1024 * 1024):
     return temp_files
 
 # 🎙️ Fungsi untuk transkripsi audio dengan OpenAI Whisper API
-def transcribe_audio(audio_path, response_format="text", use_translation=False, prompt=None):
+def transcribe_audio(audio_path, response_format="text"):
     try:
         with open(audio_path, "rb") as audio_file:
-            params = {
-                "model": "whisper-1",
-                "file": audio_file,
-                "response_format": response_format
-            }
-            if prompt:
-                params["prompt"] = prompt  # Menambahkan prompt untuk meningkatkan akurasi
-            
-            if use_translation:
-                response = client.audio.translations.create(**params)
-            else:
-                response = client.audio.transcriptions.create(**params)
-        
+            response = OpenAI(api_key=api_key).audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format=response_format
+            )
         return response.text
     except Exception as e:
         return str(e)
@@ -58,31 +53,17 @@ def transcribe_audio(audio_path, response_format="text", use_translation=False, 
 st.title("🎙️ Speech-to-Text dengan OpenAI Whisper (File Hingga 200MB)")
 st.write("Upload file audio untuk ditranskripsi menjadi teks. **(Maksimum 200MB, otomatis diproses)**")
 
-# Pilihan output format
-response_format = st.selectbox(
-    "Pilih format output:",
-    ["text (default)", "verbose_json (dengan timestamp)"],
-    index=0
-)
-format_map = {"text (default)": "text", "verbose_json (dengan timestamp)": "verbose_json"}
-
-# Pilihan untuk menerjemahkan ke Inggris
-use_translation = st.checkbox("Terjemahkan ke Bahasa Inggris")
-
-# Pilihan untuk meningkatkan akurasi dengan Prompt
-use_prompt = st.checkbox("Gunakan Prompt untuk meningkatkan akurasi?")
-prompt_text = st.text_area("Masukkan prompt (Opsional)", placeholder="Masukkan kata khusus untuk meningkatkan akurasi...") if use_prompt else None
-
 # 🎵 Upload file audio
 audio_file = st.file_uploader("Pilih file audio", type=["mp3", "wav", "flac", "m4a"])
 
 if audio_file is not None:
     st.audio(audio_file, format="audio/mp3")
 
-    # Simpan file sementara
-    temp_file_path = os.path.join(tempfile.gettempdir(), audio_file.name)
-    with open(temp_file_path, "wb") as f:
-        f.write(audio_file.read())
+    # Simpan file sementara dengan cara yang benar
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    temp_file.write(audio_file.read())
+    temp_file_path = temp_file.name
+    temp_file.close()
 
     # 🔘 Tombol untuk mulai transkripsi
     if st.button("Transkrip Audio"):
@@ -92,12 +73,7 @@ if audio_file is not None:
         transcription_texts = []
         for idx, split_file in enumerate(split_files):
             with st.spinner(f"🎙️ Mentranskripsi bagian {idx+1}/{len(split_files)}..."):
-                transcription_texts.append(transcribe_audio(
-                    split_file,
-                    response_format=format_map[response_format],
-                    use_translation=use_translation,
-                    prompt=prompt_text
-                ))
+                transcription_texts.append(transcribe_audio(split_file))
 
         # ✍️ Gabungkan semua bagian transkripsi
         final_transcription = "\n".join(transcription_texts)
