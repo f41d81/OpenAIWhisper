@@ -2,9 +2,8 @@ import streamlit as st
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from pydub import AudioSegment
-import tempfile
 import ffmpeg
+import tempfile
 
 # 🔥 Load API Key dari file .env atau Streamlit Secrets
 if "OPENAI_API_KEY" in st.secrets:
@@ -17,24 +16,31 @@ if not api_key:
     st.error("⚠️ API Key tidak ditemukan! Tambahkan di Streamlit Secrets atau file .env")
     st.stop()
 
-# 🛠️ Paksa pydub menggunakan ffmpeg-python agar bisa jalan di Streamlit Cloud
-AudioSegment.converter = "ffmpeg"
-AudioSegment.ffmpeg = "ffmpeg"
-AudioSegment.ffprobe = "ffprobe"
+# 🔄 Fungsi untuk memotong audio besar menjadi potongan kecil (<25MB)
+def split_audio_ffmpeg(input_path, output_dir, max_size=25 * 1024 * 1024):
+    # Periksa ukuran file
+    file_size = os.path.getsize(input_path)
+    if file_size <= max_size:
+        return [input_path]
 
-# 🔄 Fungsi untuk membagi file audio > 25MB menjadi potongan kecil
-def split_audio(file_path, max_size=25 * 1024 * 1024):
-    audio = AudioSegment.from_file(file_path)  # Memproses file dengan pydub
-    chunk_length_ms = len(audio) * (max_size / os.path.getsize(file_path))
-    chunks = [audio[i:i + int(chunk_length_ms)] for i in range(0, len(audio), int(chunk_length_ms))]
+    # Tentukan durasi berdasarkan ukuran
+    duration = float(ffmpeg.probe(input_path)["format"]["duration"])
+    num_chunks = int(file_size / max_size) + 1
+    chunk_duration = duration / num_chunks
 
-    temp_files = []
-    for i, chunk in enumerate(chunks):
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        chunk.export(temp_file.name, format="mp3", bitrate="64k")
-        temp_files.append(temp_file.name)
+    output_files = []
+    for i in range(num_chunks):
+        start_time = i * chunk_duration
+        output_file = os.path.join(output_dir, f"chunk_{i}.mp3")
 
-    return temp_files
+        (
+            ffmpeg.input(input_path, ss=start_time, t=chunk_duration)
+            .output(output_file, format="mp3", audio_bitrate="64k")
+            .run(overwrite_output=True)
+        )
+        output_files.append(output_file)
+
+    return output_files
 
 # 🎙️ Fungsi untuk transkripsi audio dengan OpenAI Whisper API
 def transcribe_audio(audio_path, response_format="text"):
@@ -59,7 +65,7 @@ audio_file = st.file_uploader("Pilih file audio", type=["mp3", "wav", "flac", "m
 if audio_file is not None:
     st.audio(audio_file, format="audio/mp3")
 
-    # Simpan file sementara dengan cara yang benar
+    # Simpan file sementara
     temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     temp_file.write(audio_file.read())
     temp_file_path = temp_file.name
@@ -68,7 +74,7 @@ if audio_file is not None:
     # 🔘 Tombol untuk mulai transkripsi
     if st.button("Transkrip Audio"):
         with st.spinner("🔄 Memproses file..."):
-            split_files = split_audio(temp_file_path)  # Membagi file jika lebih dari 25MB
+            split_files = split_audio_ffmpeg(temp_file_path, tempfile.gettempdir())  # Membagi file jika lebih dari 25MB
         
         transcription_texts = []
         for idx, split_file in enumerate(split_files):
