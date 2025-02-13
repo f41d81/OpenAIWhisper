@@ -19,10 +19,10 @@ if not api_key:
 # Inisialisasi OpenAI client
 client = OpenAI(api_key=api_key)
 
-# 🔄 Fungsi untuk memotong audio menjadi potongan kecil (<25MB)
+# 🔄 Fungsi untuk membagi file audio > 25MB menjadi potongan kecil
 def split_audio(file_path, max_size=25 * 1024 * 1024):
-    audio = AudioSegment.from_file(file_path)  # Memastikan file sudah tersimpan dengan benar
-    chunk_length_ms = len(audio) * (max_size / os.path.getsize(file_path))  # Hitung durasi per bagian
+    audio = AudioSegment.from_file(file_path)
+    chunk_length_ms = len(audio) * (max_size / os.path.getsize(file_path))
     chunks = [audio[i:i + int(chunk_length_ms)] for i in range(0, len(audio), int(chunk_length_ms))]
 
     temp_files = []
@@ -33,23 +33,47 @@ def split_audio(file_path, max_size=25 * 1024 * 1024):
 
     return temp_files
 
-# 🎙️ Fungsi untuk mentranskripsi audio menggunakan OpenAI Whisper API
-def transcribe_audio(audio_path):
+# 🎙️ Fungsi untuk transkripsi audio dengan OpenAI Whisper API
+def transcribe_audio(audio_path, response_format="text", use_translation=False, prompt=None):
     try:
         with open(audio_path, "rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file
-            )
+            params = {
+                "model": "whisper-1",
+                "file": audio_file,
+                "response_format": response_format
+            }
+            if prompt:
+                params["prompt"] = prompt  # Menambahkan prompt untuk meningkatkan akurasi
+            
+            if use_translation:
+                response = client.audio.translations.create(**params)
+            else:
+                response = client.audio.transcriptions.create(**params)
+        
         return response.text
     except Exception as e:
         return str(e)
 
 # 🌟 UI Streamlit
-st.title("🎙️ Speech-to-Text dengan OpenAI Whisper (Dukungan Hingga 200MB)")
-st.write("Upload file audio untuk ditranskripsi menjadi teks. **(Maksimum 200MB, otomatis dibagi untuk API OpenAI)**")
+st.title("🎙️ Speech-to-Text dengan OpenAI Whisper (File Hingga 200MB)")
+st.write("Upload file audio untuk ditranskripsi menjadi teks. **(Maksimum 200MB, otomatis diproses)**")
 
-# 🎵 Upload file audio (maksimum 200MB)
+# Pilihan output format
+response_format = st.selectbox(
+    "Pilih format output:",
+    ["text (default)", "verbose_json (dengan timestamp)"],
+    index=0
+)
+format_map = {"text (default)": "text", "verbose_json (dengan timestamp)": "verbose_json"}
+
+# Pilihan untuk menerjemahkan ke Inggris
+use_translation = st.checkbox("Terjemahkan ke Bahasa Inggris")
+
+# Pilihan untuk meningkatkan akurasi dengan Prompt
+use_prompt = st.checkbox("Gunakan Prompt untuk meningkatkan akurasi?")
+prompt_text = st.text_area("Masukkan prompt (Opsional)", placeholder="Masukkan kata khusus untuk meningkatkan akurasi...") if use_prompt else None
+
+# 🎵 Upload file audio
 audio_file = st.file_uploader("Pilih file audio", type=["mp3", "wav", "flac", "m4a"])
 
 if audio_file is not None:
@@ -68,7 +92,12 @@ if audio_file is not None:
         transcription_texts = []
         for idx, split_file in enumerate(split_files):
             with st.spinner(f"🎙️ Mentranskripsi bagian {idx+1}/{len(split_files)}..."):
-                transcription_texts.append(transcribe_audio(split_file))
+                transcription_texts.append(transcribe_audio(
+                    split_file,
+                    response_format=format_map[response_format],
+                    use_translation=use_translation,
+                    prompt=prompt_text
+                ))
 
         # ✍️ Gabungkan semua bagian transkripsi
         final_transcription = "\n".join(transcription_texts)
