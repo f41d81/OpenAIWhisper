@@ -20,19 +20,19 @@ if not api_key:
 # Inisialisasi OpenAI client
 client = OpenAI(api_key=api_key)
 
-# 🔄 Fungsi untuk mengompresi dan memperkecil ukuran file audio
-def compress_audio(input_audio):
-    try:
-        # Baca file dari streamlit
-        audio = AudioSegment.from_file(input_audio)
-        
-        # Konversi ke MP3 dengan bitrate lebih rendah (64kbps)
+# 🔄 Fungsi untuk memotong audio menjadi potongan-potongan kecil (<25MB)
+def split_audio(file_path, max_size=25 * 1024 * 1024):  # 25MB
+    audio = AudioSegment.from_file(file_path)
+    chunk_length_ms = len(audio) * (max_size / os.path.getsize(file_path))  # Hitung durasi per bagian
+    chunks = [audio[i:i + int(chunk_length_ms)] for i in range(0, len(audio), int(chunk_length_ms))]
+
+    temp_files = []
+    for i, chunk in enumerate(chunks):
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        audio.export(temp_file.name, format="mp3", bitrate="64k")
-        
-        return temp_file.name
-    except Exception as e:
-        return None
+        chunk.export(temp_file.name, format="mp3", bitrate="64k")  # Simpan dalam bitrate rendah untuk optimasi
+        temp_files.append(temp_file.name)
+
+    return temp_files
 
 # 🎙️ Fungsi untuk mentranskripsi audio menggunakan OpenAI Whisper API
 def transcribe_audio(audio_path):
@@ -47,26 +47,32 @@ def transcribe_audio(audio_path):
         return str(e)
 
 # 🌟 UI Streamlit
-st.title("🎙️ Speech-to-Text dengan OpenAI Whisper")
-st.write("Upload file audio untuk ditranskripsi menjadi teks. (Maksimum 25MB)")
+st.title("🎙️ Speech-to-Text dengan OpenAI Whisper (Dukungan Hingga 200MB)")
+st.write("Upload file audio untuk ditranskripsi menjadi teks. **(Maksimum 200MB, otomatis dibagi untuk API OpenAI)**")
 
-# 🎵 Upload file audio
+# 🎵 Upload file audio (maksimum 200MB)
 audio_file = st.file_uploader("Pilih file audio", type=["mp3", "wav", "flac", "m4a"])
 
 if audio_file is not None:
     st.audio(audio_file, format="audio/mp3")
-    
+
+    # Simpan file sementara
+    temp_dir = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+    temp_dir.write(audio_file.read())
+
     # 🔘 Tombol untuk mulai transkripsi
     if st.button("Transkrip Audio"):
-        with st.spinner("🔄 Mengompresi file audio agar sesuai dengan batas OpenAI..."):
-            compressed_audio_path = compress_audio(audio_file)
+        with st.spinner("🔄 Memproses file..."):
+            split_files = split_audio(temp_dir.name)  # Membagi file jika lebih dari 25MB
         
-        if compressed_audio_path:
-            with st.spinner("🎙️ Sedang mentranskripsi..."):
-                transcription = transcribe_audio(compressed_audio_path)
-            
-            # 📝 Tampilkan hasil transkripsi
-            st.subheader("📝 Hasil Transkripsi:")
-            st.write(transcription)
-        else:
-            st.error("❌ Gagal mengompresi audio. Pastikan formatnya benar.")
+        transcription_texts = []
+        for idx, split_file in enumerate(split_files):
+            with st.spinner(f"🎙️ Mentrankripsi bagian {idx+1}/{len(split_files)}..."):
+                transcription_texts.append(transcribe_audio(split_file))
+
+        # ✍️ Gabungkan semua bagian transkripsi
+        final_transcription = "\n".join(transcription_texts)
+
+        # 📝 Tampilkan hasil transkripsi
+        st.subheader("📝 Hasil Transkripsi:")
+        st.write(final_transcription)
