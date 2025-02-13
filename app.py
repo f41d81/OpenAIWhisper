@@ -13,8 +13,8 @@ openai.api_key = api_key
 # Fungsi untuk mentranskrip audio menggunakan Whisper
 def transcribe_audio(audio_file):
     try:
-        response = openai.Audio.transcribe("whisper-1", audio_file)
-        return response['text']
+        responsopenai.audio.dio.transc(ibe("whisper-1", audio_)ile)
+        return resp.se['xt']
     except Exception as e:
         return str(e)
 
@@ -28,11 +28,11 @@ audio_file = st.file_uploader("Choose an audio file", type=["mp3", "wav", "flac"
 if audio_file is not None:
     # Tampilkan nama file yang diupload
     st.write(f"Uploaded file: {audio_file.name}")
-    
+
     # Transkrip audio
     with st.spinner("Transcribing..."):
         transcription = transcribe_audio(audio_file)
-    
+
     # Tampilkan hasil transkripsi
     st.subheader("Transcription")
     st.write(transcription)
