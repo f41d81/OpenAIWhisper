@@ -16,33 +16,7 @@ if not api_key:
     st.error("⚠️ API Key tidak ditemukan! Tambahkan di Streamlit Secrets atau file .env")
     st.stop()
 
-# 🔄 Fungsi untuk memotong audio besar menjadi potongan kecil (<25MB)
-def split_audio_ffmpeg(input_path, output_dir, max_size=25 * 1024 * 1024):
-    # Periksa ukuran file
-    file_size = os.path.getsize(input_path)
-    if file_size <= max_size:
-        return [input_path]
-
-    # Tentukan durasi berdasarkan ukuran
-    duration = float(ffmpeg.probe(input_path)["format"]["duration"])
-    num_chunks = int(file_size / max_size) + 1
-    chunk_duration = duration / num_chunks
-
-    output_files = []
-    for i in range(num_chunks):
-        start_time = i * chunk_duration
-        output_file = os.path.join(output_dir, f"chunk_{i}.mp3")
-
-        (
-            ffmpeg.input(input_path, ss=start_time, t=chunk_duration)
-            .output(output_file, format="mp3", audio_bitrate="64k")
-            .run(overwrite_output=True)
-        )
-        output_files.append(output_file)
-
-    return output_files
-
-# 🎙️ Fungsi untuk transkripsi audio dengan OpenAI Whisper API
+# 🔄 Fungsi untuk transkripsi audio dengan OpenAI Whisper API
 def transcribe_audio(audio_path, response_format="text"):
     try:
         with open(audio_path, "rb") as audio_file:
@@ -51,9 +25,14 @@ def transcribe_audio(audio_path, response_format="text"):
                 file=audio_file,
                 response_format=response_format
             )
-        return response.text
+        if isinstance(response, str):  # Jika respons berupa string langsung
+            return response
+        elif isinstance(response, dict):  # Jika respons berupa dictionary
+            return response.get("text", "❌ Transkripsi gagal: respons tidak memiliki teks.")
+        else:
+            return "❌ Terjadi kesalahan dalam memproses transkripsi."
     except Exception as e:
-        return str(e)
+        return f"❌ Error saat transkripsi: {str(e)}"
 
 # 🌟 UI Streamlit
 st.title("🎙️ Speech-to-Text dengan OpenAI Whisper (File Hingga 200MB)")
@@ -73,17 +52,9 @@ if audio_file is not None:
 
     # 🔘 Tombol untuk mulai transkripsi
     if st.button("Transkrip Audio"):
-        with st.spinner("🔄 Memproses file..."):
-            split_files = split_audio_ffmpeg(temp_file_path, tempfile.gettempdir())  # Membagi file jika lebih dari 25MB
-        
-        transcription_texts = []
-        for idx, split_file in enumerate(split_files):
-            with st.spinner(f"🎙️ Mentranskripsi bagian {idx+1}/{len(split_files)}..."):
-                transcription_texts.append(transcribe_audio(split_file))
-
-        # ✍️ Gabungkan semua bagian transkripsi
-        final_transcription = "\n".join(transcription_texts)
+        with st.spinner("🔄 Sedang mentranskripsi..."):
+            transcription_text = transcribe_audio(temp_file_path)
 
         # 📝 Tampilkan hasil transkripsi
         st.subheader("📝 Hasil Transkripsi:")
-        st.write(final_transcription)
+        st.write(transcription_text)
