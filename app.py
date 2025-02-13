@@ -1,13 +1,13 @@
 import streamlit as st
 import openai
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+if "OPENAI_API_KEY" in st.secrets:
+    api_key = st.secrets["OPENAI_API_KEY"]
+else:
+    st.error("⚠️ API Key tidak ditemukan. Tambahkan di Streamlit Secrets!")
+    st.stop()
 
-# Ambil API key dari .env file
-api_key = os.getenv("OPENAI_API_KEY")
 openai.api_key = api_key
 
 # Fungsi untuk mentranskrip audio menggunakan Whisper
